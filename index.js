@@ -6,16 +6,26 @@ const {
 } = require("@whiskeysockets/baileys");
 const pino = require("pino");
 const cron = require("node-cron");
-const axios = require("axios");
+const http = require("http");
 
-// رقمك كأدمن ومسؤول للبوت
-const OWNER_JID = "249118626501@s.whatsapp.net";
-
-// ضع هنا رقم شريحة البوت التي تريد تشغيل البوت عليها (مع المفتاح الدولي بدون + وبدون مسافات)
-// إذا كان نفس رقمك اتركه كما هو، أو غيّره لرقم شريحة البوت
+// رقم شريحة البوت (الرقم الذي سيتم ربطه ويرد على الناس)
+// تأكد من كتابة الرقم المراد ربطه هنا بدون مسافات أو إشارة +
 const BOT_PHONE_NUMBER = "249118626501";
 
+// رقمك الشخصي للتحكم الإداري
+const OWNER_JID = "249118626501@s.whatsapp.net";
+
 let botMode = "public";
+
+// سيرفر خفيف لتثبيت خدمة Render ومنع السيرفر من إعادة التشغيل وإلغاء الكود
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot Server is Running!');
+});
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Web server listening on port ${PORT}`);
+});
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('./session_auth');
@@ -29,13 +39,12 @@ async function startBot() {
         browser: ["Ubuntu", "Chrome", "20.0.04"]
     });
 
-    // توليد كود الاقتران وطباعته مباشرة في السجلات
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             try {
                 const pairingCode = await sock.requestPairingCode(BOT_PHONE_NUMBER.trim());
                 console.log("\n==========================================");
-                console.log(`>>> كود الاقتران الخاص بك هو: [ ${pairingCode} ] <<<`);
+                console.log(`>>> كود الاقتران الجديد هو: [ ${pairingCode} ] <<<`);
                 console.log("==========================================\n");
             } catch (err) {
                 console.error("خطأ أثناء طلب كود الاقتران:", err);
@@ -51,11 +60,11 @@ async function startBot() {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log('✅ تم تشغيل البوت بنجاح تام وهو جاهز الآن للعمل!');
+            console.log('✅ تم تشغيل البوت وربطه بنجاح تام!');
         }
     });
 
-    // معالجة الرسائل والأوامر
+    // معالجة الرسائل
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
         const msg = messages[0];
@@ -67,7 +76,6 @@ async function startBot() {
         const isOwner = sender.replace(/[^0-9]/g, '') === "249118626501";
         const isGroup = from.endsWith('@g.us');
 
-        // لوحة تحكم المسؤول
         if (isOwner) {
             if (text === ".تفعيل") {
                 botMode = "public";
@@ -89,13 +97,11 @@ async function startBot() {
         if (botMode === "off") return;
         if (botMode === "private" && !isOwner) return;
 
-        // منع الروابط في المجموعات
         if (isGroup && text.match(/(https?:\/\/|chat\.whatsapp\.com)/i) && !isOwner) {
             await sock.sendMessage(from, { delete: msg.key });
             return await sock.sendMessage(from, { text: "⚠️ ممنوع نشر الروابط في القروب!" });
         }
 
-        // إرسال صفحة المصحف الملون برقمها
         const pageNum = parseInt(text);
         if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= 604) {
             const pageUrl = `https://raw.githubusercontent.com/Govar-dev/Quran-Pages/main/${pageNum}.png`;
@@ -105,7 +111,6 @@ async function startBot() {
             });
         }
 
-        // أوامر المساعدة
         if (text === "اوامر" || text === "مساعدة" || text === ".اوامر") {
             const menu = `🕌 مرحباً بك في البوت الديني:\n\n` +
                 `🔹 أرسل رقم الصفحة من (1 إلى 604) لعرض مصحف التجويد الملون.\n` +
@@ -114,13 +119,12 @@ async function startBot() {
         }
     });
 
-    // أذكار الصباح والمساء
     cron.schedule('30 6 * * *', async () => {
-        await sock.sendMessage(OWNER_JID, { text: "🌅 أذكار الصباح: أصبحنا وأصبح الملك لله والحمد لله..." });
+        await sock.sendMessage(OWNER_JID, { text: "🌅 أذكار الصباح..." });
     });
 
     cron.schedule('30 17 * * *', async () => {
-        await sock.sendMessage(OWNER_JID, { text: "🌆 أذكار المساء: أمسينا وأمسى الملك لله والحمد لله..." });
+        await sock.sendMessage(OWNER_JID, { text: "🌆 أذكار المساء..." });
     });
 }
 
